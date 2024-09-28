@@ -15,11 +15,15 @@
 
 #define PI 3.14159265359
 
-typedef struct Boid
+typedef struct Vector2
 {
 	GLfloat x, y;
-	GLfloat direction;
-	GLfloat speed;
+}Vector2;
+
+typedef struct Boid
+{
+	Vector2 position;
+	Vector2 velocity;
 	GLfloat r, g, b;
 } Boid;
 
@@ -39,6 +43,7 @@ GLint spawnThreshold = 50;
 Boid currentFlock[FLOCK_SIZE];
 Boid previousFlock[FLOCK_SIZE];
 GLint boidSize = 15;
+GLfloat flockSpeed = 0.01;
 
 // Other variables
 GLfloat smallConstant = 0.1;
@@ -61,16 +66,18 @@ void initializeBoids()
 	GLint spawnMaxY = 450;
 	for (int i = 0; i < FLOCK_SIZE; i++)
 	{
-		currentFlock[i].x = rand() % (spawnMaxX - spawnMinX) + spawnMinX;
-		currentFlock[i].y = rand() % (spawnMaxY - spawnMinY) + spawnMinY;
+		currentFlock[i].position = (Vector2){ (rand() % (spawnMaxX - spawnMinX) + spawnMinX),
+												(rand() % (spawnMaxY - spawnMinY) + spawnMinY) };
 
-		currentFlock[i].direction = rand() % 365;
-		currentFlock[i].speed = 0.01;
+		GLfloat angle = (rand() % 360) * (PI / 180.0);
+		printf("angle: %f \n", angle);
+		currentFlock[i].velocity = (Vector2){ (cos(angle) * flockSpeed), (sin(angle) * flockSpeed) };
 
 		currentFlock[i].r = 0.0;
 		currentFlock[i].g = 0.0;
 		currentFlock[i].b = 1.0;
-		printf("X: %f, Y: %f, N: %d \n", currentFlock[i].x, currentFlock[i].y, i);
+		printf("X: %f, Y: %f, N: %d \n", currentFlock[i].position.x, currentFlock[i].position.y, i);
+		printf("VX: %f, VY: %f, N: %d \n", currentFlock[i].velocity.x, currentFlock[i].velocity.y, i);
 	}
 }
 
@@ -78,10 +85,8 @@ void copyCurrentFlockToPrevious()
 {
 	for (int i = 0; i < FLOCK_SIZE; i++)
 	{
-		previousFlock[i].x = currentFlock[i].x;
-		previousFlock[i].y = currentFlock[i].y;
-		previousFlock[i].direction = currentFlock[i].direction;
-		previousFlock[i].speed = currentFlock[i].speed;
+		previousFlock[i].position = currentFlock[i].position;
+		previousFlock[i].velocity = currentFlock[i].velocity;
 		previousFlock[i].r = currentFlock[i].r;
 		previousFlock[i].g = currentFlock[i].g;
 		previousFlock[i].b = currentFlock[i].b;
@@ -90,10 +95,10 @@ void copyCurrentFlockToPrevious()
 
 GLubyte inProximityOfHorizontal(int index)
 {
-	if (previousFlock[index].x > windowWidth - distanceThreshold) 
+	if (previousFlock[index].position.x > windowWidth - distanceThreshold) 
 		//printf("Right hit "); 
 		return 0x1;
-	if (previousFlock[index].x < distanceThreshold) 
+	if (previousFlock[index].position.x < distanceThreshold) 
 		//printf("Left hit "); 
 		return 0x2;
 	
@@ -102,10 +107,10 @@ GLubyte inProximityOfHorizontal(int index)
 
 GLubyte inProximityOfVertical(int index)
 {
-	if (previousFlock[index].y < subWindowHeight + distanceThreshold)
+	if (previousFlock[index].position.y < subWindowHeight + distanceThreshold)
 		//printf("Lower hit "); 
 		return 0x4;
-	if (previousFlock[index].y > windowHeight - distanceThreshold) 
+	if (previousFlock[index].position.y > windowHeight - distanceThreshold) 
 		//printf("Upper hit "); 
 		return 0x8;
 	
@@ -113,27 +118,44 @@ GLubyte inProximityOfVertical(int index)
 	return 0x0;
 }
 
+
+
+//
+//GENERAL PSEUDOCODE FOR ALGORITHM
+// if this.position.position.x < proximity
+//		new velocity = new vector((1/this.position.position.x) * constant, 0);
+// Follow for other vectors
+//
 void updateDirection(int index, GLubyte proximity)
 {
-	GLfloat newDirection = previousFlock[index].direction;
+	Vector2 newVelocity = previousFlock[index].velocity;
 
-	GLfloat inverseLeft = 1.0 / fabs(previousFlock[index].x - distanceThreshold);
-	GLfloat inverseRight = 1.0 / fabs(windowWidth - previousFlock[index].x - distanceThreshold);
-	GLfloat inverseBottom = 1.0 / fabs(previousFlock[index].y - subWindowHeight - distanceThreshold);
-	GLfloat inverseTop = 1.0 / fabs(windowHeight - previousFlock[index].y - distanceThreshold);
+	GLfloat inverseLeft = 1.0 / fabs(previousFlock[index].position.x - distanceThreshold);
+	GLfloat inverseRight = 1.0 / fabs(windowWidth - previousFlock[index].position.x - distanceThreshold);
+	GLfloat inverseBottom = 1.0 / fabs(previousFlock[index].position.y - subWindowHeight - distanceThreshold);
+	GLfloat inverseTop = 1.0 / fabs(windowHeight - previousFlock[index].position.y - distanceThreshold);
 	
+	
+	if (proximity & 0x1) // Right hit
+	{
+		newVelocity = (Vector2){ (1.0 / (previousFlock[index].position.x - windowWidth)) * smallConstant, (0) };
+	}
+	else if (proximity & 0x2) // Left hit
+	{
+		newVelocity = (Vector2){ (1.0 / previousFlock[index].position.x) * smallConstant, (0) };
+	}
 
-	if (proximity & 0x1) newDirection -= inverseRight * smallConstant;
-	else if (proximity & 0x2) newDirection += inverseLeft * smallConstant;
 
+	if (proximity & 0x4) // Bottom hit
+	{
+		newVelocity = (Vector2){ (0), ((1.0 / previousFlock[index].position.y) * smallConstant) };
+	}
+	else if (proximity & 0x8) // Top hit
+	{
+		newVelocity = (Vector2){ (0), ((1.0 / (previousFlock[index].position.y - windowHeight)) * smallConstant) };
+	}
 
-	if (proximity & 0x4) newDirection += inverseBottom * smallConstant;
-	else if (proximity & 0x8) newDirection -= inverseTop * smallConstant;
-
-	if (newDirection >= 360) newDirection -= 360;
-	if (newDirection < 0) newDirection += 360;
-
-	currentFlock[index].direction = newDirection;
+	currentFlock[index].velocity = newVelocity;
 }
 
 void updateBoids()
@@ -144,18 +166,15 @@ void updateBoids()
 		GLubyte inProximity = inProximityOfHorizontal(i) | inProximityOfVertical(i);
 		if (inProximity > 0)
 		{
-			//printf("MASK: %x\n", inProximity);
+			printf("MASK: %x\n", inProximity);
 			updateDirection(i, inProximity);
 		}
 		else
 		{
 
 		}
-		GLfloat vx = previousFlock[i].speed * cos(getRadiansFromDegrees(currentFlock[i].direction));
-		GLfloat vy = previousFlock[i].speed * sin(getRadiansFromDegrees(currentFlock[i].direction));
-
-		currentFlock[i].x += vx;
-		currentFlock[i].y += vy;
+		currentFlock[i].position.x += currentFlock[i].velocity.x;
+		currentFlock[i].position.y += currentFlock[i].velocity.y;
 	}
 }
 
@@ -173,9 +192,9 @@ void drawBoids(Boid boid)
 {
 	glColor3f(boid.r, boid.g, boid.b);
 	glBegin(GL_TRIANGLES);
-	glVertex2f(boid.x, boid.y);
-	glVertex2f(boid.x - boidSize / 3, boid.y - boidSize);
-	glVertex2f(boid.x + boidSize / 3, boid.y - boidSize);
+	glVertex2f(boid.position.x, boid.position.y);
+	glVertex2f(boid.position.x - boidSize / 3, boid.position.y - boidSize);
+	glVertex2f(boid.position.x + boidSize / 3, boid.position.y - boidSize);
 	glEnd();
 }
 
