@@ -94,6 +94,73 @@ void initializeBoids()
 	copyCurrentFlockToPrevious();
 }
 
+typedef struct boidNeighbours
+{
+	GLfloat distance;
+	GLint index
+}boidNeighbours;
+
+// Bubble swap for Quicksort
+void swap(int* a, int* b)
+{
+	int temp = *a;
+	*a = *b;
+	*b = temp;
+}
+
+int partition(boidNeighbours arr[], int low, int high)
+{
+	int pivot = arr[high];
+
+	int i = low - 1;
+
+	for (int j = low; j <= high; j++)
+	{
+		if (arr[j] < pivot)
+		{
+			i++;
+			swap(&arr[i], &arr[j]);
+		}
+	}
+
+	swap(&arr[i + 1], &arr[high]);
+	return i + 1;
+}
+
+void quicksort(boidNeighbours arr[], int low, int high)
+{
+	if (low < high)
+	{
+		int pi = partition(arr, low, high);
+		quicksort(arr, low, pi - 1);
+		quicksort(arr, pi + 1, high);
+	}
+}
+
+GLint* findNearestNeighboursIndex(Boid boid, int index)
+{
+	GLint nearestNeighboursIndexes[6];
+
+	GLint sortedBoids[FLOCK_SIZE];
+	boidNeighbours neighbours[FLOCK_SIZE];
+
+	for (int i = 0; i < FLOCK_SIZE; i++)
+	{
+		if (i != index)
+		{
+			neighbours[i].distance = getDistance(boid.position.x, currentFlock[i].position.x, boid.position.y, currentFlock[i].position.y);
+			neighbours[i].index = i;
+		}
+		else
+		{
+			neighbours[i].distance = windowHeight;
+			neighbours[i].index = i;
+		}
+	}
+	quicksort(neighbours, 0, FLOCK_SIZE - 1);
+
+}
+
 GLubyte inProximityOfHorizontal(int index)
 {
 	if (previousFlock[index].position.x > windowWidth - distanceThreshold) 
@@ -119,14 +186,6 @@ GLubyte inProximityOfVertical(int index)
 	return 0x0;
 }
 
-
-
-//
-//GENERAL PSEUDOCODE FOR ALGORITHM
-// if this.position.position.x < proximity
-//		new velocity = new vector((1/this.position.position.x) * constant, 0);
-// Follow for other vectors
-//
 void updateDirection(int index, GLubyte proximity)
 {
 	Vector2 newVelocity = previousFlock[index].velocity;
@@ -159,6 +218,7 @@ void updateBoids()
 	for (int i = 0; i < FLOCK_SIZE; i++)
 	{
 		
+		
 		GLubyte inProximity = inProximityOfHorizontal(i) | inProximityOfVertical(i);
 		if (inProximity > 0)
 		{
@@ -170,14 +230,7 @@ void updateBoids()
 		}
 		currentFlock[i].position.x += currentFlock[i].velocity.x;
 		currentFlock[i].position.y += currentFlock[i].velocity.y;
-		if (currentFlock[i].position.x < 0)
-			currentFlock[i].position.x = 0;
-		if (currentFlock[i].position.x > windowWidth)
-			currentFlock[i].position.x = windowWidth;
-		if (currentFlock[i].position.y < 0)
-			currentFlock[i].position.y = 0;
-		if (currentFlock[i].position.y > windowHeight)
-			currentFlock[i].position.y = windowHeight;
+		
 		printf("X: %f, Y: %f \n", currentFlock[0].position.x, currentFlock[0].position.y);
 	}
 }
