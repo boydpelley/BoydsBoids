@@ -39,14 +39,14 @@ GLint distanceThreshold = 25;
 GLint spawnThreshold = 50;
 
 // Flock variables
-#define FLOCK_SIZE 2
+#define FLOCK_SIZE 20
 Boid currentFlock[FLOCK_SIZE];
 Boid previousFlock[FLOCK_SIZE];
-GLint boidSize = 15;
-GLfloat flockSpeed = 0.01;
+GLint boidSize = 1;
+GLfloat flockSpeed = 0.1;
 
 // Other variables
-GLfloat smallConstant = 0.1;
+GLfloat smallConstant = 0.01;
 
 GLfloat getDistance(GLfloat x1, GLfloat x2, GLfloat y1, GLfloat y2)
 {
@@ -56,6 +56,18 @@ GLfloat getDistance(GLfloat x1, GLfloat x2, GLfloat y1, GLfloat y2)
 GLfloat getRadiansFromDegrees(GLfloat degrees)
 {
 	return degrees * (PI / 180.0);
+}
+
+void copyCurrentFlockToPrevious()
+{
+	for (int i = 0; i < FLOCK_SIZE; i++)
+	{
+		previousFlock[i].position = currentFlock[i].position;
+		previousFlock[i].velocity = currentFlock[i].velocity;
+		previousFlock[i].r = currentFlock[i].r;
+		previousFlock[i].g = currentFlock[i].g;
+		previousFlock[i].b = currentFlock[i].b;
+	}
 }
 
 void initializeBoids()
@@ -79,18 +91,7 @@ void initializeBoids()
 		printf("X: %f, Y: %f, N: %d \n", currentFlock[i].position.x, currentFlock[i].position.y, i);
 		printf("VX: %f, VY: %f, N: %d \n", currentFlock[i].velocity.x, currentFlock[i].velocity.y, i);
 	}
-}
-
-void copyCurrentFlockToPrevious()
-{
-	for (int i = 0; i < FLOCK_SIZE; i++)
-	{
-		previousFlock[i].position = currentFlock[i].position;
-		previousFlock[i].velocity = currentFlock[i].velocity;
-		previousFlock[i].r = currentFlock[i].r;
-		previousFlock[i].g = currentFlock[i].g;
-		previousFlock[i].b = currentFlock[i].b;
-	}
+	copyCurrentFlockToPrevious();
 }
 
 GLubyte inProximityOfHorizontal(int index)
@@ -129,33 +130,28 @@ GLubyte inProximityOfVertical(int index)
 void updateDirection(int index, GLubyte proximity)
 {
 	Vector2 newVelocity = previousFlock[index].velocity;
-
-	GLfloat inverseLeft = 1.0 / fabs(previousFlock[index].position.x - distanceThreshold);
-	GLfloat inverseRight = 1.0 / fabs(windowWidth - previousFlock[index].position.x - distanceThreshold);
-	GLfloat inverseBottom = 1.0 / fabs(previousFlock[index].position.y - subWindowHeight - distanceThreshold);
-	GLfloat inverseTop = 1.0 / fabs(windowHeight - previousFlock[index].position.y - distanceThreshold);
-	
 	
 	if (proximity & 0x1) // Right hit
 	{
-		newVelocity = (Vector2){ (1.0 / (previousFlock[index].position.x - windowWidth)) * smallConstant, (0) };
+		newVelocity.x += (1.0 / (previousFlock[index].position.x - windowWidth)) * smallConstant;
 	}
 	else if (proximity & 0x2) // Left hit
 	{
-		newVelocity = (Vector2){ (1.0 / previousFlock[index].position.x) * smallConstant, (0) };
+		newVelocity.x += (1.0 / previousFlock[index].position.x) * smallConstant;
 	}
 
 
 	if (proximity & 0x4) // Bottom hit
 	{
-		newVelocity = (Vector2){ (0), ((1.0 / previousFlock[index].position.y) * smallConstant) };
+		newVelocity.y += ((1.0 / previousFlock[index].position.y) * smallConstant);
 	}
 	else if (proximity & 0x8) // Top hit
 	{
-		newVelocity = (Vector2){ (0), ((1.0 / (previousFlock[index].position.y - windowHeight)) * smallConstant) };
+		newVelocity.y += ((1.0 / (previousFlock[index].position.y - windowHeight)) * smallConstant);
 	}
-
+	printf("VX: %f, VY: %f \n", newVelocity.x, newVelocity.y);
 	currentFlock[index].velocity = newVelocity;
+
 }
 
 void updateBoids()
@@ -166,7 +162,6 @@ void updateBoids()
 		GLubyte inProximity = inProximityOfHorizontal(i) | inProximityOfVertical(i);
 		if (inProximity > 0)
 		{
-			printf("MASK: %x\n", inProximity);
 			updateDirection(i, inProximity);
 		}
 		else
@@ -175,6 +170,15 @@ void updateBoids()
 		}
 		currentFlock[i].position.x += currentFlock[i].velocity.x;
 		currentFlock[i].position.y += currentFlock[i].velocity.y;
+		if (currentFlock[i].position.x < 0)
+			currentFlock[i].position.x = 0;
+		if (currentFlock[i].position.x > windowWidth)
+			currentFlock[i].position.x = windowWidth;
+		if (currentFlock[i].position.y < 0)
+			currentFlock[i].position.y = 0;
+		if (currentFlock[i].position.y > windowHeight)
+			currentFlock[i].position.y = windowHeight;
+		printf("X: %f, Y: %f \n", currentFlock[0].position.x, currentFlock[0].position.y);
 	}
 }
 
@@ -190,12 +194,21 @@ void initializeGL(void)
 
 void drawBoids(Boid boid)
 {
+	GLfloat angleRads = atan2f(boid.velocity.y, boid.velocity.x);
+
+	glPushMatrix();
+
+	glTranslatef(boid.position.x, boid.position.y, 0.0f);
+	glRotatef(angleRads * (180.0 / PI), 0.0f, 0.0f, 1.0f);
+
 	glColor3f(boid.r, boid.g, boid.b);
 	glBegin(GL_TRIANGLES);
-	glVertex2f(boid.position.x, boid.position.y);
-	glVertex2f(boid.position.x - boidSize / 3, boid.position.y - boidSize);
-	glVertex2f(boid.position.x + boidSize / 3, boid.position.y - boidSize);
+	glVertex2f(10 * boidSize, 0);
+	glVertex2f(-4 * boidSize, 4 * boidSize);
+	glVertex2f(-4 * boidSize, -4 * boidSize);
 	glEnd();
+
+	glPopMatrix();
 }
 
 void myDisplay()
