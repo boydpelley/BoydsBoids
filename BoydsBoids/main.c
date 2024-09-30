@@ -45,9 +45,11 @@ Boid currentFlock[FLOCK_SIZE];
 Boid previousFlock[FLOCK_SIZE];
 GLint boidSize = 1;
 GLfloat flockSpeed = 0.01;
+GLfloat boidDistance = 5;
 
 // Other variables
-GLfloat smallConstant = 0.0001;
+GLfloat wallAvoidanceFactor = 0.0001;
+GLfloat boidAvoidanceFactor = 0.01;
 
 GLfloat getDistance(GLfloat x1, GLfloat x2, GLfloat y1, GLfloat y2)
 {
@@ -223,25 +225,57 @@ void avoidWalls(GLint index, GLubyte proximity)
 	
 	if (proximity & 0x1) // Right hit
 	{
-		newVelocity.x += (1.0 / (previousFlock[index].position.x - windowWidth)) * smallConstant;
+		newVelocity.x += (1.0 / (previousFlock[index].position.x - windowWidth)) * wallAvoidanceFactor;
 	}
 	else if (proximity & 0x2) // Left hit
 	{
-		newVelocity.x += (1.0 / previousFlock[index].position.x) * smallConstant;
+		newVelocity.x += (1.0 / previousFlock[index].position.x) * wallAvoidanceFactor;
 	}
 
 
 	if (proximity & 0x4) // Bottom hit
 	{
-		newVelocity.y += ((1.0 / previousFlock[index].position.y) * smallConstant);
+		newVelocity.y += ((1.0 / previousFlock[index].position.y) * wallAvoidanceFactor);
 	}
 	else if (proximity & 0x8) // Top hit
 	{
-		newVelocity.y += ((1.0 / (previousFlock[index].position.y - windowHeight)) * smallConstant);
+		newVelocity.y += ((1.0 / (previousFlock[index].position.y - windowHeight)) * wallAvoidanceFactor);
 	}
 	// printf("VX: %f, VY: %f \n", newVelocity.x, newVelocity.y);
 	currentFlock[index].velocity = newVelocity;
 
+}
+
+void avoidBoids(GLint index, GLint nearestNeighbours[])
+{
+	Vector2 newVelocity = { 0, 0 };
+
+	for (int i = 0; i < NUMBER_NEIGHBOURS; i++)
+	{
+		Vector2 positionAway =
+		{
+			previousFlock[index].position.x - previousFlock[nearestNeighbours[i]].position.x,
+			previousFlock[i].position.y - previousFlock[nearestNeighbours[i]].position.y
+		};
+
+		normalize(&positionAway);
+
+		GLfloat distance = getDistance
+		(
+			previousFlock[index].position.x, previousFlock[nearestNeighbours[i]].position.x,
+			previousFlock[index].position.y, previousFlock[nearestNeighbours[i]].position.y
+		);
+
+		positionAway.x *= (1.0 / distance) * boidAvoidanceFactor;
+		positionAway.y *= (1.0 / distance) * boidAvoidanceFactor;
+
+		newVelocity.x += positionAway.x;
+		newVelocity.y += positionAway.y;
+
+	}
+
+	currentFlock[index].velocity.x += newVelocity.x;
+	currentFlock[index].velocity.y += newVelocity.y;
 }
 
 void updateBoids()
@@ -250,8 +284,6 @@ void updateBoids()
 	{
 		GLint nearestNeighbours[NUMBER_NEIGHBOURS];
 		findNearestNeighboursIndex(currentFlock[i], i, nearestNeighbours);
-
-		adjustDirectionToNeighbours(nearestNeighbours, i);
 		
 		GLubyte inProximity = inProximityOfHorizontal(i) | inProximityOfVertical(i);
 		if (inProximity > 0)
@@ -260,7 +292,16 @@ void updateBoids()
 		}
 		else
 		{
+			adjustDirectionToNeighbours(nearestNeighbours, i);
 
+			for (int j = 0; j < NUMBER_NEIGHBOURS; j++)
+			{
+				if (getDistance(currentFlock[i].position.x, currentFlock[nearestNeighbours[j]].position.x,
+					currentFlock[i].position.y, currentFlock[nearestNeighbours[j]].position.y) > boidDistance)
+				{
+					avoidBoids(i, nearestNeighbours);
+				}
+			}
 		}
 		currentFlock[i].position.x += currentFlock[i].velocity.x;
 		currentFlock[i].position.y += currentFlock[i].velocity.y;
