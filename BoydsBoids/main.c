@@ -39,14 +39,15 @@ GLint distanceThreshold = 25;
 GLint spawnThreshold = 50;
 
 // Flock variables
-#define FLOCK_SIZE 20
+#define FLOCK_SIZE 40
+#define NUMBER_NEIGHBOURS 6
 Boid currentFlock[FLOCK_SIZE];
 Boid previousFlock[FLOCK_SIZE];
 GLint boidSize = 1;
-GLfloat flockSpeed = 0.1;
+GLfloat flockSpeed = 0.01;
 
 // Other variables
-GLfloat smallConstant = 0.01;
+GLfloat smallConstant = 0.0001;
 
 GLfloat getDistance(GLfloat x1, GLfloat x2, GLfloat y1, GLfloat y2)
 {
@@ -58,9 +59,19 @@ GLfloat getRadiansFromDegrees(GLfloat degrees)
 	return degrees * (PI / 180.0);
 }
 
+void normalize(Vector2 * vector)
+{
+	GLfloat length = sqrt(vector->x * vector->x + vector->y * vector->y);
+	if (length != 0)
+	{
+		vector->x /= length;
+		vector->y /= length;
+	}
+}
+
 void copyCurrentFlockToPrevious()
 {
-	for (int i = 0; i < FLOCK_SIZE; i++)
+	for (GLint i = 0; i < FLOCK_SIZE; i++)
 	{
 		previousFlock[i].position = currentFlock[i].position;
 		previousFlock[i].velocity = currentFlock[i].velocity;
@@ -72,11 +83,11 @@ void copyCurrentFlockToPrevious()
 
 void initializeBoids()
 {
-	GLint spawnMinX = 50;
-	GLint spawnMaxX = 450;
-	GLint spawnMinY = 150;
-	GLint spawnMaxY = 450;
-	for (int i = 0; i < FLOCK_SIZE; i++)
+	GLint  spawnMinX = 50;
+	GLint  spawnMaxX = 450;
+	GLint  spawnMinY = 150;
+	GLint  spawnMaxY = 450;
+	for (GLint i = 0; i < FLOCK_SIZE; i++)
 	{
 		currentFlock[i].position = (Vector2){ (rand() % (spawnMaxX - spawnMinX) + spawnMinX),
 												(rand() % (spawnMaxY - spawnMinY) + spawnMinY) };
@@ -97,26 +108,26 @@ void initializeBoids()
 typedef struct boidNeighbours
 {
 	GLfloat distance;
-	GLint index
-}boidNeighbours;
+	GLint  index;
+} boidNeighbours;
 
 // Bubble swap for Quicksort
-void swap(int* a, int* b)
+void swap(boidNeighbours* a, boidNeighbours* b)
 {
-	int temp = *a;
+	boidNeighbours temp = *a;
 	*a = *b;
 	*b = temp;
 }
 
-int partition(boidNeighbours arr[], int low, int high)
+GLint partition(boidNeighbours arr[], GLint low, GLint high)
 {
-	int pivot = arr[high];
+	GLfloat pivot = arr[high].distance;
 
-	int i = low - 1;
+	GLint i = low - 1;
 
-	for (int j = low; j <= high; j++)
+	for (GLint j = low; j <= high; j++)
 	{
-		if (arr[j] < pivot)
+		if (arr[j].distance < pivot)
 		{
 			i++;
 			swap(&arr[i], &arr[j]);
@@ -127,24 +138,22 @@ int partition(boidNeighbours arr[], int low, int high)
 	return i + 1;
 }
 
-void quicksort(boidNeighbours arr[], int low, int high)
+void quicksort(boidNeighbours arr[], GLint low, GLint high)
 {
 	if (low < high)
 	{
-		int pi = partition(arr, low, high);
+		GLint pi = partition(arr, low, high);
 		quicksort(arr, low, pi - 1);
 		quicksort(arr, pi + 1, high);
 	}
 }
 
-GLint* findNearestNeighboursIndex(Boid boid, int index)
+void findNearestNeighboursIndex(Boid boid, GLint index, GLint*nearestNeighboursIndexes)
 {
-	GLint nearestNeighboursIndexes[6];
-
-	GLint sortedBoids[FLOCK_SIZE];
+	GLint  sortedBoids[FLOCK_SIZE];
 	boidNeighbours neighbours[FLOCK_SIZE];
 
-	for (int i = 0; i < FLOCK_SIZE; i++)
+	for (GLint i = 0; i < FLOCK_SIZE; i++)
 	{
 		if (i != index)
 		{
@@ -159,34 +168,56 @@ GLint* findNearestNeighboursIndex(Boid boid, int index)
 	}
 	quicksort(neighbours, 0, FLOCK_SIZE - 1);
 
+	for (GLint i = 0; i < NUMBER_NEIGHBOURS; i++)
+	{
+		nearestNeighboursIndexes[i] = neighbours[i].index;
+	}
+
 }
 
-GLubyte inProximityOfHorizontal(int index)
+void adjustDirectionToNeighbours(GLint arr[], GLint index)
 {
-	if (previousFlock[index].position.x > windowWidth - distanceThreshold) 
-		//printf("Right hit "); 
+	Vector2 newVelocity = { 0, 0 };
+
+	for (GLint i = 0; i < NUMBER_NEIGHBOURS; i++)
+	{
+		newVelocity.x += previousFlock[arr[i]].velocity.x;
+		newVelocity.y += previousFlock[arr[i]].velocity.y;
+	}
+
+	newVelocity.x /= NUMBER_NEIGHBOURS;
+	newVelocity.y /= NUMBER_NEIGHBOURS;
+
+	normalize(&newVelocity);
+
+	newVelocity.x *= flockSpeed;
+	newVelocity.y *= flockSpeed;
+
+	currentFlock[index].velocity = newVelocity;
+}
+
+GLubyte inProximityOfHorizontal(GLint index)
+{
+	if (previousFlock[index].position.x > windowWidth - distanceThreshold)  
 		return 0x1;
 	if (previousFlock[index].position.x < distanceThreshold) 
-		//printf("Left hit "); 
 		return 0x2;
 	
 	return 0x0;
 }
 
-GLubyte inProximityOfVertical(int index)
+GLubyte inProximityOfVertical(GLint index)
 {
 	if (previousFlock[index].position.y < subWindowHeight + distanceThreshold)
-		//printf("Lower hit "); 
 		return 0x4;
 	if (previousFlock[index].position.y > windowHeight - distanceThreshold) 
-		//printf("Upper hit "); 
 		return 0x8;
 	
 
 	return 0x0;
 }
 
-void updateDirection(int index, GLubyte proximity)
+void avoidWalls(GLint index, GLubyte proximity)
 {
 	Vector2 newVelocity = previousFlock[index].velocity;
 	
@@ -208,21 +239,24 @@ void updateDirection(int index, GLubyte proximity)
 	{
 		newVelocity.y += ((1.0 / (previousFlock[index].position.y - windowHeight)) * smallConstant);
 	}
-	printf("VX: %f, VY: %f \n", newVelocity.x, newVelocity.y);
+	// printf("VX: %f, VY: %f \n", newVelocity.x, newVelocity.y);
 	currentFlock[index].velocity = newVelocity;
 
 }
 
 void updateBoids()
 {
-	for (int i = 0; i < FLOCK_SIZE; i++)
+	for (GLint i = 0; i < FLOCK_SIZE; i++)
 	{
-		
+		GLint nearestNeighbours[NUMBER_NEIGHBOURS];
+		findNearestNeighboursIndex(currentFlock[i], i, nearestNeighbours);
+
+		adjustDirectionToNeighbours(nearestNeighbours, i);
 		
 		GLubyte inProximity = inProximityOfHorizontal(i) | inProximityOfVertical(i);
 		if (inProximity > 0)
 		{
-			updateDirection(i, inProximity);
+			avoidWalls(i, inProximity);
 		}
 		else
 		{
@@ -231,7 +265,7 @@ void updateBoids()
 		currentFlock[i].position.x += currentFlock[i].velocity.x;
 		currentFlock[i].position.y += currentFlock[i].velocity.y;
 		
-		printf("X: %f, Y: %f \n", currentFlock[0].position.x, currentFlock[0].position.y);
+		// printf("X: %f, Y: %f \n", currentFlock[0].position.x, currentFlock[0].position.y);
 	}
 }
 
@@ -276,7 +310,7 @@ void myDisplay()
 	} 
 	else 
 	{
-		for (int i = 0; i < FLOCK_SIZE; i++)
+		for (GLint i = 0; i < FLOCK_SIZE; i++)
 		{
 			drawBoids(currentFlock[i]);
 		}
@@ -291,7 +325,7 @@ void idleBoids()
 	glutPostRedisplay();
 }
 
-void handleClick(int button, int state, int x, int y)
+void handleClick(GLint button, GLint state, GLint x, GLint y)
 {
 	if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN)
 	{
@@ -311,7 +345,7 @@ void handleClick(int button, int state, int x, int y)
 	}
 }
 
-int main(int argc, char** argv)
+GLint main(GLint argc, char** argv)
 {
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_RGB);
