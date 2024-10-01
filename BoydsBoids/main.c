@@ -30,13 +30,17 @@ typedef struct Boid
 // Global mouse variables
 GLint mousePressed = 0;
 GLfloat mouseX, mouseY;
+GLint pauseState = 0;
+
+// Global keyboard variables
+GLint boidState = -1;
 
 // Window Variables
 GLint windowHeight = 500;
 GLint windowWidth = 500;
 GLint subWindowHeight = 100;
-GLint distanceThreshold = 65;
-GLint spawnThreshold = 50;
+GLint distanceThreshold = 25;
+GLint spawnThreshold = 45;
 
 // Flock variables
 #define FLOCK_SIZE 40
@@ -44,14 +48,14 @@ GLint spawnThreshold = 50;
 Boid currentFlock[FLOCK_SIZE];
 Boid previousFlock[FLOCK_SIZE];
 GLint boidSize = 1;
-GLfloat flockSpeed = 0.001;
+GLfloat flockSpeed = 0.01;
 GLfloat boidDistance = 20;
 
 // Other variables
-GLfloat wallAvoidanceFactor = 0.0001;
-GLfloat boidAvoidanceFactor = 0.0007;
-GLfloat boidAlignmentFactor = 0.00002;
-GLfloat boidCohesionFactor = 0.00005;
+GLfloat wallAvoidanceFactor = 0.00001;
+GLfloat boidAvoidanceFactor = 0.000007;
+GLfloat boidAlignmentFactor = 0.0000002;
+GLfloat boidCohesionFactor = 0.0000005;
 
 GLfloat getDistance(GLfloat x1, GLfloat x2, GLfloat y1, GLfloat y2)
 {
@@ -61,6 +65,11 @@ GLfloat getDistance(GLfloat x1, GLfloat x2, GLfloat y1, GLfloat y2)
 GLfloat getRadiansFromDegrees(GLfloat degrees)
 {
 	return degrees * (PI / 180.0);
+}
+
+GLfloat getMagnitude(GLfloat x, GLfloat y)
+{
+	return (GLfloat)sqrt(x * x + y * y);
 }
 
 void normalize(Vector2 * vector)
@@ -93,24 +102,21 @@ void copyCurrentFlockToPrevious()
 
 void initializeBoids()
 {
-	GLint  spawnMinX = 50;
-	GLint  spawnMaxX = 450;
-	GLint  spawnMinY = 150;
-	GLint  spawnMaxY = 450;
+	GLint spawnMinX = spawnThreshold;
+	GLint spawnMaxX = windowWidth - spawnThreshold;
+	GLint spawnMinY = subWindowHeight + spawnThreshold;
+	GLint spawnMaxY = windowHeight - spawnThreshold;
 	for (GLint i = 0; i < FLOCK_SIZE; i++)
 	{
 		currentFlock[i].position = (Vector2){ (rand() % (spawnMaxX - spawnMinX) + spawnMinX),
 												(rand() % (spawnMaxY - spawnMinY) + spawnMinY) };
 
 		GLfloat angle = (rand() % 360) * (PI / 180.0);
-		printf("angle: %f \n", angle);
 		currentFlock[i].velocity = (Vector2){ (cos(angle) * flockSpeed), (sin(angle) * flockSpeed) };
 
 		currentFlock[i].r = 0.0;
 		currentFlock[i].g = 0.0;
 		currentFlock[i].b = 1.0;
-		printf("X: %f, Y: %f, N: %d \n", currentFlock[i].position.x, currentFlock[i].position.y, i);
-		printf("VX: %f, VY: %f, N: %d \n", currentFlock[i].velocity.x, currentFlock[i].velocity.y, i);
 	}
 	copyCurrentFlockToPrevious();
 }
@@ -182,12 +188,6 @@ void findNearestNeighboursIndex(Boid boid, GLint index, GLint*nearestNeighboursI
 	{
 		nearestNeighboursIndexes[i] = neighbours[i].index;
 	}
-
-}
-
-void adjustDirectionToNeighbours(GLint arr[], GLint index)
-{
-
 }
 
 GLubyte inProximityOfHorizontal(GLint index)
@@ -207,7 +207,6 @@ GLubyte inProximityOfVertical(GLint index)
 	if (previousFlock[index].position.y > windowHeight - distanceThreshold) 
 		return 0x8;
 	
-
 	return 0x0;
 }
 
@@ -224,7 +223,6 @@ void avoidWalls(GLint index, GLubyte proximity)
 		newVelocity.x += (1.0 / previousFlock[index].position.x) * wallAvoidanceFactor;
 	}
 
-
 	if (proximity & 0x4) // Bottom hit
 	{
 		newVelocity.y += ((1.0 / previousFlock[index].position.y) * wallAvoidanceFactor);
@@ -233,51 +231,122 @@ void avoidWalls(GLint index, GLubyte proximity)
 	{
 		newVelocity.y += ((1.0 / (previousFlock[index].position.y - windowHeight)) * wallAvoidanceFactor);
 	}
-	// printf("VX: %f, VY: %f \n", newVelocity.x, newVelocity.y);
+
 	currentFlock[index].velocity = newVelocity;
 
 }
 
-void avoidBoids(GLint index, GLint nearestNeighbours[])
+void handleBoidRules(GLint i, GLint* nearestNeighbours)
 {
-	Vector2 newVelocity = { 0, 0 };
+	Vector2 alignment = { 0, 0 };
+	Vector2 cohesion = { 0, 0 };
+	Vector2 separation = { 0, 0 };
 
-	for (int i = 0; i < NUMBER_NEIGHBOURS; i++)
+	for (int j = 0; j < NUMBER_NEIGHBOURS; j++)
 	{
-		Vector2 positionAway =
+		GLint neighbour = nearestNeighbours[j];
+
+		alignment.x += previousFlock[neighbour].velocity.x;
+		alignment.y += previousFlock[neighbour].velocity.y;
+
+		cohesion.x += previousFlock[neighbour].position.x;
+		cohesion.y += previousFlock[neighbour].position.y;
+
+		GLfloat distance = getDistance(previousFlock[i].position.x, previousFlock[neighbour].position.x,
+			previousFlock[i].position.y, previousFlock[neighbour].position.y);
+
+		if (distance < boidDistance)
 		{
-			previousFlock[index].position.x - previousFlock[nearestNeighbours[i]].position.x,
-			previousFlock[i].position.y - previousFlock[nearestNeighbours[i]].position.y
-		};
+			Vector2 directionAway =
+			{
+				previousFlock[i].position.x - previousFlock[neighbour].position.x,
+				previousFlock[i].position.y - previousFlock[neighbour].position.y
+			};
 
-		normalize(&positionAway);
+			normalize(&directionAway);
 
-		GLfloat distance = getDistance
-		(
-			previousFlock[index].position.x, previousFlock[nearestNeighbours[i]].position.x,
-			previousFlock[index].position.y, previousFlock[nearestNeighbours[i]].position.y
-		);
+			directionAway.x *= (1.0 / distance) * boidAvoidanceFactor;
+			directionAway.y *= (1.0 / distance) * boidAvoidanceFactor;
 
-		positionAway.x *= (1.0 / distance) * boidAvoidanceFactor;
-		positionAway.y *= (1.0 / distance) * boidAvoidanceFactor;
-
-		newVelocity.x += positionAway.x;
-		newVelocity.y += positionAway.y;
-
+			separation.x += directionAway.x;
+			separation.y += directionAway.y;
+		}
 	}
 
-	currentFlock[index].velocity.x += newVelocity.x;
-	currentFlock[index].velocity.y += newVelocity.y;
+	alignment.x /= NUMBER_NEIGHBOURS;
+	alignment.y /= NUMBER_NEIGHBOURS;
+
+	alignment.x -= previousFlock[i].velocity.x;
+	alignment.y -= previousFlock[i].velocity.y;
+
+	normalize(&alignment);
+	applyFactor(&alignment, boidAlignmentFactor);
+
+	currentFlock[i].velocity.x += alignment.x;
+	currentFlock[i].velocity.y += alignment.y;
+
+	cohesion.x /= NUMBER_NEIGHBOURS;
+	cohesion.y /= NUMBER_NEIGHBOURS;
+
+	cohesion.x -= previousFlock[i].position.x;
+	cohesion.y -= previousFlock[i].position.y;
+
+	normalize(&cohesion);
+	applyFactor(&cohesion, boidCohesionFactor);
+
+	currentFlock[i].velocity.x += cohesion.x;
+	currentFlock[i].velocity.y += cohesion.y;
+
+	currentFlock[i].velocity.x += separation.x;
+	currentFlock[i].velocity.y += separation.y;
+
+	GLfloat currentSpeed = getMagnitude(currentFlock[i].velocity.x, currentFlock[i].velocity.y);
+
+	if (currentSpeed > flockSpeed)
+	{
+		currentFlock[i].velocity.x = (currentFlock[i].velocity.x / currentSpeed) * flockSpeed;
+		currentFlock[i].velocity.y = (currentFlock[i].velocity.y / currentSpeed) * flockSpeed;
+	}
+
 }
 
+void setAllBoidsColour()
+{
+	for (GLint i = 0; i < FLOCK_SIZE; i++)
+	{
+		currentFlock[i].r = 0.0f;
+		currentFlock[i].g = 0.0f;
+		currentFlock[i].b = 1.0f;
+	}
+}
 
+void handleBoidState(GLint i, GLint* nearestNeighbours)
+{
+	currentFlock[i].r = 1.0f;
+	currentFlock[i].g = 0.0f;
+	currentFlock[i].b = 0.0f;
+
+	for (GLint i = 0; i < NUMBER_NEIGHBOURS; i++)
+	{
+		GLint neighbour = nearestNeighbours[i];
+		currentFlock[neighbour].r = 0.0f;
+		currentFlock[neighbour].g = 1.0f;
+		currentFlock[neighbour].b = 0.0f;
+	}
+}
 
 void updateBoids()
 {
+	setAllBoidsColour();
 	for (GLint i = 0; i < FLOCK_SIZE; i++)
 	{
 		GLint nearestNeighbours[NUMBER_NEIGHBOURS];
 		findNearestNeighboursIndex(currentFlock[i], i, nearestNeighbours);
+
+		if (i == boidState)
+		{
+			handleBoidState(boidState, nearestNeighbours);
+		}
 		
 		GLubyte inProximity = inProximityOfHorizontal(i) | inProximityOfVertical(i);
 		if (inProximity > 0)
@@ -286,81 +355,10 @@ void updateBoids()
 		}
 		else
 		{
-			Vector2 alignment = { 0, 0 };
-			Vector2 cohesion = { 0, 0 };
-			Vector2 separation = { 0, 0 };
-
-			for (int j = 0; j < NUMBER_NEIGHBOURS; j++)
-			{
-				GLint neighbour = nearestNeighbours[j];
-				
-				alignment.x += previousFlock[neighbour].velocity.x;
-				alignment.y += previousFlock[neighbour].velocity.y;
-
-				cohesion.x += previousFlock[neighbour].position.x;
-				cohesion.y += previousFlock[neighbour].position.y;
-
-				GLfloat distance = getDistance(previousFlock[i].position.x, previousFlock[neighbour].position.x,
-					previousFlock[i].position.y, previousFlock[neighbour].position.y);
-
-				if (distance < boidDistance)
-				{
-					Vector2 directionAway =
-					{
-						previousFlock[i].position.x - previousFlock[neighbour].position.x,
-						previousFlock[i].position.y - previousFlock[neighbour].position.y
-					};
-
-					normalize(&directionAway);
-
-					directionAway.x *= (1.0 / distance) * boidAvoidanceFactor;
-					directionAway.y *= (1.0 / distance) * boidAvoidanceFactor;
-
-					separation.x += directionAway.x;
-					separation.y += directionAway.y;
-				}
-			}
-
-			alignment.x /= NUMBER_NEIGHBOURS;
-			alignment.y /= NUMBER_NEIGHBOURS;
-
-			alignment.x -= previousFlock[i].velocity.x;
-			alignment.y -= previousFlock[i].velocity.y;
-
-			normalize(&alignment);
-			applyFactor(&alignment, boidAlignmentFactor);
-
-			currentFlock[i].velocity.x += alignment.x;
-			currentFlock[i].velocity.y += alignment.y;
-
-			cohesion.x /= NUMBER_NEIGHBOURS;
-			cohesion.y /= NUMBER_NEIGHBOURS;
-
-			cohesion.x -= previousFlock[i].position.x;
-			cohesion.y -= previousFlock[i].position.y;
-
-			normalize(&cohesion);
-			applyFactor(&cohesion, boidCohesionFactor);
-
-			currentFlock[i].velocity.x += cohesion.x;
-			currentFlock[i].velocity.y += cohesion.y;
-
-			currentFlock[i].velocity.x += separation.x;
-			currentFlock[i].velocity.y += separation.y;
-
-			GLfloat speed = sqrt(currentFlock[i].velocity.x * currentFlock[i].velocity.x +
-				currentFlock[i].velocity.y * currentFlock[i].velocity.y);
-			if (speed > flockSpeed) {
-				currentFlock[i].velocity.x = (currentFlock[i].velocity.x / speed) * flockSpeed;
-				currentFlock[i].velocity.y = (currentFlock[i].velocity.y / speed) * flockSpeed;
-			}
-			
-
+			handleBoidRules(i, nearestNeighbours);
 		}
 		currentFlock[i].position.x += currentFlock[i].velocity.x;
 		currentFlock[i].position.y += currentFlock[i].velocity.y;
-		
-		// printf("X: %f, Y: %f \n", currentFlock[0].position.x, currentFlock[0].position.y);
 	}
 }
 
@@ -385,31 +383,91 @@ void drawBoids(Boid boid)
 
 	glColor3f(boid.r, boid.g, boid.b);
 	glBegin(GL_TRIANGLES);
-	glVertex2f(10 * boidSize, 0);
-	glVertex2f(-4 * boidSize, 4 * boidSize);
-	glVertex2f(-4 * boidSize, -4 * boidSize);
+	glVertex2f(8 * boidSize, 0);
+	glVertex2f(-3 * boidSize, 3 * boidSize);
+	glVertex2f(-3 * boidSize, -3 * boidSize);
 	glEnd();
 
 	glPopMatrix();
+}
+
+void drawUI()
+{
+	glColor3f(0.5f, 0.9f, 0.7f);
+	glBegin(GL_POLYGON);
+		glVertex2d(0, 0);
+		glVertex2d(0, subWindowHeight);
+		glVertex2d(windowWidth, subWindowHeight);
+		glVertex2d(windowWidth, 0);
+	glEnd();
+
+	glColor3f(0.5f, 1.0f, 0.7f);
+	glBegin(GL_POLYGON);
+		glVertex2d(0, subWindowHeight - 25);
+		glVertex2d(0, subWindowHeight - 20);
+		glVertex2d(windowWidth, subWindowHeight - 20);
+		glVertex2d(windowWidth, subWindowHeight - 25);
+	glEnd();
+
+	GLint midXSubWindow = windowWidth / 2;
+	GLint midYSubWindow = subWindowHeight / 2;
+	GLint buttonWidth = 75;
+	GLint buttonHeight = 15;
+	GLint offset = 2;
+
+	if (pauseState)
+	{
+		glColor3f(0.5f, 1.0f, 0.7f);
+		glBegin(GL_POLYGON);
+			glVertex2d(midXSubWindow - buttonWidth - offset, midYSubWindow - buttonHeight + offset);
+			glVertex2d(midXSubWindow - buttonWidth - offset, midYSubWindow + buttonHeight + offset);
+			glVertex2d(midXSubWindow + buttonWidth - offset, midYSubWindow + buttonHeight + offset);
+			glVertex2d(midXSubWindow + buttonWidth - offset, midYSubWindow - buttonHeight + offset);
+		glEnd();
+
+		glColor3f(0.4f, 0.8f, 0.6f);
+		glBegin(GL_POLYGON);
+			glVertex2d(midXSubWindow - buttonWidth, midYSubWindow - buttonHeight);
+			glVertex2d(midXSubWindow - buttonWidth, midYSubWindow + buttonHeight);
+			glVertex2d(midXSubWindow + buttonWidth, midYSubWindow + buttonHeight);
+			glVertex2d(midXSubWindow + buttonWidth, midYSubWindow - buttonHeight);
+		glEnd();
+	}
+	else
+	{
+		glColor3f(0.3f, 0.7f, 0.5f);
+		glBegin(GL_POLYGON);
+			glVertex2d(midXSubWindow - buttonWidth + offset, midYSubWindow - buttonHeight - offset);
+			glVertex2d(midXSubWindow - buttonWidth + offset, midYSubWindow + buttonHeight - offset);
+			glVertex2d(midXSubWindow + buttonWidth + offset, midYSubWindow + buttonHeight - offset);
+			glVertex2d(midXSubWindow + buttonWidth + offset, midYSubWindow - buttonHeight - offset);
+		glEnd();
+
+		glColor3f(0.5f, 1.0f, 0.7f);
+		glBegin(GL_POLYGON);
+			glVertex2d(midXSubWindow - buttonWidth, midYSubWindow - buttonHeight);
+			glVertex2d(midXSubWindow - buttonWidth, midYSubWindow + buttonHeight);
+			glVertex2d(midXSubWindow + buttonWidth, midYSubWindow + buttonHeight);
+			glVertex2d(midXSubWindow + buttonWidth, midYSubWindow - buttonHeight);
+		glEnd();
+	}
 }
 
 void myDisplay()
 {
 	glClear(GL_COLOR_BUFFER_BIT);
 
+	for (GLint i = 0; i < FLOCK_SIZE; i++)
+	{
+		drawBoids(currentFlock[i]);
+	}
 	if (mousePressed)
 	{
 		glBegin(GL_POINTS);
-			glVertex2f(mouseX, mouseY);
+		glVertex2f(mouseX, mouseY);
 		glEnd();
-	} 
-	else 
-	{
-		for (GLint i = 0; i < FLOCK_SIZE; i++)
-		{
-			drawBoids(currentFlock[i]);
-		}
 	}
+	drawUI();
 	glFlush();
 }
 
@@ -440,6 +498,52 @@ void handleClick(GLint button, GLint state, GLint x, GLint y)
 	}
 }
 
+void handleKeyboard(unsigned char key, GLint x, GLint y)
+{
+	if (key == GLUT_KEY_PAGE_UP)
+	{
+		flockSpeed += 0.0001;
+		printf("Speed: %f\n", flockSpeed);
+		fflush(stdout);
+	}
+	else if (key == GLUT_KEY_PAGE_DOWN)
+	{
+		flockSpeed -= 0.0001;
+		printf("Speed: %f\n", flockSpeed);
+		fflush(stdout);
+	}
+	else if (key >= '1' && key <= '9')
+	{
+		boidState = key - 1 - '0';
+	}
+	else if (key == '0')
+	{
+		boidState = -1 - '0';
+	}
+	else if (key == 'Q' || key == 'q')
+	{
+		exit(0);
+	}
+	else if (key == 'P' || key == 'p')
+	{
+		if (pauseState == 0) pauseState = 1;
+		else if (pauseState == 1) pauseState = 0;
+	}
+}
+
+void initialPrintStatement()
+{
+	printf("\n\n");
+	printf("Scene Controls\n");
+	printf("-----------------\n");
+	printf("Page Up   : faster\n");
+	printf("Page Down : slower\n");
+	printf("[1-9]     : highlight boid and its neighbours\n");
+	printf("0         : turn off highlighting\n");
+	printf("q         : quit\n");
+	printf("\nNote: may need to use FN keys to use Page Up and Page Down on Laptops\n\n");
+}
+
 GLint main(GLint argc, char** argv)
 {
 	glutInit(&argc, argv);
@@ -450,7 +554,10 @@ GLint main(GLint argc, char** argv)
 
 	initializeBoids();
 
+	initialPrintStatement();
+
 	glutDisplayFunc(myDisplay);
+	glutKeyboardFunc(handleKeyboard);
 	glutIdleFunc(idleBoids);
 	glutMouseFunc(handleClick);
 
