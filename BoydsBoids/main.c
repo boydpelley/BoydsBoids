@@ -35,7 +35,7 @@ GLfloat mouseX, mouseY;
 GLint windowHeight = 500;
 GLint windowWidth = 500;
 GLint subWindowHeight = 100;
-GLint distanceThreshold = 25;
+GLint distanceThreshold = 65;
 GLint spawnThreshold = 50;
 
 // Flock variables
@@ -44,12 +44,14 @@ GLint spawnThreshold = 50;
 Boid currentFlock[FLOCK_SIZE];
 Boid previousFlock[FLOCK_SIZE];
 GLint boidSize = 1;
-GLfloat flockSpeed = 0.01;
-GLfloat boidDistance = 5;
+GLfloat flockSpeed = 0.001;
+GLfloat boidDistance = 20;
 
 // Other variables
 GLfloat wallAvoidanceFactor = 0.0001;
-GLfloat boidAvoidanceFactor = 0.01;
+GLfloat boidAvoidanceFactor = 0.0007;
+GLfloat boidAlignmentFactor = 0.00002;
+GLfloat boidCohesionFactor = 0.00005;
 
 GLfloat getDistance(GLfloat x1, GLfloat x2, GLfloat y1, GLfloat y2)
 {
@@ -69,6 +71,12 @@ void normalize(Vector2 * vector)
 		vector->x /= length;
 		vector->y /= length;
 	}
+}
+
+void applyFactor(Vector2* vector, GLfloat factor)
+{
+	vector->x *= factor;
+	vector->y *= factor;
 }
 
 void copyCurrentFlockToPrevious()
@@ -179,23 +187,7 @@ void findNearestNeighboursIndex(Boid boid, GLint index, GLint*nearestNeighboursI
 
 void adjustDirectionToNeighbours(GLint arr[], GLint index)
 {
-	Vector2 newVelocity = { 0, 0 };
 
-	for (GLint i = 0; i < NUMBER_NEIGHBOURS; i++)
-	{
-		newVelocity.x += previousFlock[arr[i]].velocity.x;
-		newVelocity.y += previousFlock[arr[i]].velocity.y;
-	}
-
-	newVelocity.x /= NUMBER_NEIGHBOURS;
-	newVelocity.y /= NUMBER_NEIGHBOURS;
-
-	normalize(&newVelocity);
-
-	newVelocity.x *= flockSpeed;
-	newVelocity.y *= flockSpeed;
-
-	currentFlock[index].velocity = newVelocity;
 }
 
 GLubyte inProximityOfHorizontal(GLint index)
@@ -278,6 +270,8 @@ void avoidBoids(GLint index, GLint nearestNeighbours[])
 	currentFlock[index].velocity.y += newVelocity.y;
 }
 
+
+
 void updateBoids()
 {
 	for (GLint i = 0; i < FLOCK_SIZE; i++)
@@ -292,16 +286,76 @@ void updateBoids()
 		}
 		else
 		{
-			adjustDirectionToNeighbours(nearestNeighbours, i);
+			Vector2 alignment = { 0, 0 };
+			Vector2 cohesion = { 0, 0 };
+			Vector2 separation = { 0, 0 };
 
 			for (int j = 0; j < NUMBER_NEIGHBOURS; j++)
 			{
-				if (getDistance(currentFlock[i].position.x, currentFlock[nearestNeighbours[j]].position.x,
-					currentFlock[i].position.y, currentFlock[nearestNeighbours[j]].position.y) > boidDistance)
+				GLint neighbour = nearestNeighbours[j];
+				
+				alignment.x += previousFlock[neighbour].velocity.x;
+				alignment.y += previousFlock[neighbour].velocity.y;
+
+				cohesion.x += previousFlock[neighbour].position.x;
+				cohesion.y += previousFlock[neighbour].position.y;
+
+				GLfloat distance = getDistance(previousFlock[i].position.x, previousFlock[neighbour].position.x,
+					previousFlock[i].position.y, previousFlock[neighbour].position.y);
+
+				if (distance < boidDistance)
 				{
-					avoidBoids(i, nearestNeighbours);
+					Vector2 directionAway =
+					{
+						previousFlock[i].position.x - previousFlock[neighbour].position.x,
+						previousFlock[i].position.y - previousFlock[neighbour].position.y
+					};
+
+					normalize(&directionAway);
+
+					directionAway.x *= (1.0 / distance) * boidAvoidanceFactor;
+					directionAway.y *= (1.0 / distance) * boidAvoidanceFactor;
+
+					separation.x += directionAway.x;
+					separation.y += directionAway.y;
 				}
 			}
+
+			alignment.x /= NUMBER_NEIGHBOURS;
+			alignment.y /= NUMBER_NEIGHBOURS;
+
+			alignment.x -= previousFlock[i].velocity.x;
+			alignment.y -= previousFlock[i].velocity.y;
+
+			normalize(&alignment);
+			applyFactor(&alignment, boidAlignmentFactor);
+
+			currentFlock[i].velocity.x += alignment.x;
+			currentFlock[i].velocity.y += alignment.y;
+
+			cohesion.x /= NUMBER_NEIGHBOURS;
+			cohesion.y /= NUMBER_NEIGHBOURS;
+
+			cohesion.x -= previousFlock[i].position.x;
+			cohesion.y -= previousFlock[i].position.y;
+
+			normalize(&cohesion);
+			applyFactor(&cohesion, boidCohesionFactor);
+
+			currentFlock[i].velocity.x += cohesion.x;
+			currentFlock[i].velocity.y += cohesion.y;
+
+			currentFlock[i].velocity.x += separation.x;
+			currentFlock[i].velocity.y += separation.y;
+
+			GLfloat speed = sqrt(currentFlock[i].velocity.x * currentFlock[i].velocity.x +
+				currentFlock[i].velocity.y * currentFlock[i].velocity.y);
+			if (speed > flockSpeed) {
+				currentFlock[i].velocity.x = (currentFlock[i].velocity.x / speed) * flockSpeed;
+				currentFlock[i].velocity.y = (currentFlock[i].velocity.y / speed) * flockSpeed;
+			}
+			
+
 		}
 		currentFlock[i].position.x += currentFlock[i].velocity.x;
 		currentFlock[i].position.y += currentFlock[i].velocity.y;
