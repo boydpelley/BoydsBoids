@@ -366,9 +366,6 @@ void initializeGL(void)
 {
 	glClearColor(0, 0, 0, 1);
 
-	glColor3f(1.0, 0.0, 0.0);
-	glPointSize(8);
-
 	gluOrtho2D(0.0, windowWidth, 0.0, windowHeight);
 }
 
@@ -461,21 +458,29 @@ void myDisplay()
 	{
 		drawBoids(currentFlock[i]);
 	}
+
+	drawUI();
+
 	if (mousePressed)
 	{
+		glColor3f(1.0, 0.0, 0.0);
+		glPointSize(8);
 		glBegin(GL_POINTS);
 		glVertex2f(mouseX, mouseY);
 		glEnd();
 	}
-	drawUI();
+
 	glFlush();
 }
 
 void idleBoids()
 {
-	updateBoids();
-	copyCurrentFlockToPrevious();
-	glutPostRedisplay();
+	if (pauseState == 0)
+	{
+		updateBoids();
+		copyCurrentFlockToPrevious();
+		glutPostRedisplay();
+	}
 }
 
 void handleClick(GLint button, GLint state, GLint x, GLint y)
@@ -489,30 +494,40 @@ void handleClick(GLint button, GLint state, GLint x, GLint y)
 	{
 		mousePressed = 1;
 
-		mouseX = (GLfloat)x / (GLfloat)windowWidth;
-
+		mouseX = (GLfloat)x;
 		mouseY = (GLfloat)windowHeight - (GLfloat)y;
-		mouseY = mouseY / (GLfloat)windowHeight;
+
+		printf("mouseX: %f, mouseY: %f\n", mouseX, mouseY);
+
+		if (mouseX >= 175 && mouseX <= 325 && mouseY >= 35 && mouseY <= 65)
+		{
+			if (pauseState == 0) pauseState = 1;
+			else if (pauseState == 1) pauseState = 0;
+		}
 
 		glutPostRedisplay();
 	}
 }
 
-void handleKeyboard(unsigned char key, GLint x, GLint y)
+void handleSpecialKeyboard(unsigned char key, GLint x, GLint y)
 {
-	if (key == GLUT_KEY_PAGE_UP)
+	if (key == GLUT_KEY_PAGE_UP || key == GLUT_KEY_UP)
 	{
 		flockSpeed += 0.0001;
 		printf("Speed: %f\n", flockSpeed);
 		fflush(stdout);
 	}
-	else if (key == GLUT_KEY_PAGE_DOWN)
+	else if (key == GLUT_KEY_PAGE_DOWN || key == GLUT_KEY_UP)
 	{
 		flockSpeed -= 0.0001;
 		printf("Speed: %f\n", flockSpeed);
 		fflush(stdout);
 	}
-	else if (key >= '1' && key <= '9')
+}
+
+void handleKeyboard(unsigned char key, GLint x, GLint y)
+{
+	if (key >= '1' && key <= '9')
 	{
 		boidState = key - 1 - '0';
 	}
@@ -558,6 +573,7 @@ GLint main(GLint argc, char** argv)
 
 	glutDisplayFunc(myDisplay);
 	glutKeyboardFunc(handleKeyboard);
+	glutSpecialFunc(handleSpecialKeyboard);
 	glutIdleFunc(idleBoids);
 	glutMouseFunc(handleClick);
 
